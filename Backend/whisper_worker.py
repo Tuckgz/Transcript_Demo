@@ -1,9 +1,14 @@
 import os
 import time
 import subprocess
+import requests  # Added for API calls
 from flask import Flask, request, jsonify, send_file, abort, Response
 from flask_cors import CORS, cross_origin
 import whisper  # Ensure whisper is imported
+import yt_dlp as youtube_dl # Add the import
+
+# --- API Key Requirement for OpenAI Whisper API ---
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = Flask(__name__)
 
@@ -42,6 +47,7 @@ def upload():
 
     timestamp = current_timestamp()
     file_path = ""
+    filename = ""
 
     if video_file:
         filename = f"{timestamp}_{video_file.filename}"
@@ -52,18 +58,18 @@ def upload():
         if "youtube.com" in video_url or "youtu.be" in video_url:
             filename = f"{timestamp}_youtube_video.mp4"
             file_path = os.path.join(UPLOAD_PATH, filename)
-            cmd = [
-                "yt-dlp",
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/mp4",
-                "-o", file_path,
-                video_url
-            ]
+            ydl_opts = {
+                'format': 'bestvideo[ext=mp4]+bestaudio/best[ext=m4a]/mp4',
+                'outtmpl': file_path,
+                'merge_output_format': 'mp4',
+            }
             add_status("Downloading YouTube video...")
             try:
-                subprocess.run(cmd, check=True, capture_output=True)
+                with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([video_url])
                 add_status(f"Downloaded video as {filename}")
-            except subprocess.CalledProcessError as e:
-                add_status(f"Error downloading YouTube video: {e.output.decode('utf-8') if e.output else str(e)}")
+            except Exception as e:
+                add_status(f"Error downloading YouTube video: {str(e)}")
                 return jsonify({"error": "Failed to download YouTube video"}), 500
         else:
             filename = f"{timestamp}_downloaded_video.mp4"
@@ -94,7 +100,7 @@ def transcribe_video():
     if not os.path.exists(file_path):
         return jsonify({"error": "Video file not found"}), 404
 
-    add_status(f"Starting transcription for {video_filename} using Whisper...")
+    add_status(f"Starting transcription for {video_filename} using local Whisper...")
     model = whisper.load_model("base")
     result = model.transcribe(file_path)
     add_status("Transcription completed. Generating VTT file...")
@@ -142,7 +148,6 @@ def serve_vtt(filename):
     with open(file_path, "r", encoding="utf-8") as f:
         vtt_content = f.read()
 
-    # Flask-CORS will handle the CORS headers.
     return Response(vtt_content, mimetype="text/vtt")
 
 @app.route("/uploaded_videos/<filename>", methods=["GET", "OPTIONS"])
@@ -155,7 +160,6 @@ def serve_video(filename):
     if not os.path.exists(file_path):
         abort(404)
 
-    # Flask-CORS will handle the CORS headers.
     return send_file(file_path, mimetype="video/mp4")
 
 @app.route("/list_videos", methods=["GET"])
@@ -176,6 +180,114 @@ def list_transcriptions():
         {"url": f"http://localhost:5000/vtt_files/{f}", "filename": f} for f in files if f.endswith(".vtt")
     ]
     return jsonify({"transcriptions": transcriptions})
+
+# -------------------------------
+# Alternative API Call Transcription using Whisper API
+# -------------------------------
+# The following function demonstrates how to use the OpenAI Whisper API
+# to transcribe an audio file. It includes conversion of the MP4 to MP3 before sending.
+# Uncomment this block if you prefer using the API instead of the local Whisper model.
+#
+@app.route("/transcribe_video_api", methods=["POST", "OPTIONS"])
+@cross_origin(origins="http://localhost:5173")
+def transcribe_video_api():
+    if request.method == "OPTIONS":
+        return jsonify({})
+
+    data = request.get_json()
+    video_filename = data.get("videoFilename")
+    if not video_filename:
+        return jsonify({"error": "No video filename provided"}), 400
+    file_path = os.path.join(UPLOAD_PATH, video_filename)
+    if not os.path.exists(file_path):
+        return jsonify({"error": "Video file not found"}), 404
+
+    add_status(f"Starting transcription for {video_filename} using OpenAI Whisper API...")
+
+    # Convert MP4 to MP3 before sending to the API.
+    try:
+        audio_file_path = convert_mp4_to_mp3(file_path)
+    except Exception as e:
+        return jsonify({"error": "Conversion to MP3 failed", "details": str(e)}), 500
+
+    url = "https://api.openai.com/v1/audio/transcriptions"
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}"
+    }
+
+    files_payload = {
+        "file": open(audio_file_path, "rb"),
+        "model": (None, "whisper-1"),
+        "response_format": (None, "verbose_json"),
+        "timestamp_granularities": (None, "segment")
+    }
+
+    try:
+        response = requests.post(url, headers=headers, files=files_payload)
+        files_payload["file"].close()
+
+        # Delete temporary mp3 file after transcription
+        try:
+            os.remove(audio_file_path)
+            add_status(f"Deleted temporary MP3 file: {audio_file_path}")
+        except Exception as del_err:
+            add_status(f"Warning: could not delete temporary file: {del_err}")
+
+        if response.status_code == 200:
+            result = response.json()
+            add_status("API transcription completed. Generating VTT file...")
+
+            if "segments" not in result:
+                add_status("Error: No 'segments' found in API response.")
+                return jsonify({"error": "API transcription failed."}), 500
+
+            segments = result["segments"]
+            base_name = os.path.splitext(video_filename)[0]
+            vtt_filename = f"{base_name}_transcription.vtt"
+            vtt_file_path = os.path.join(VTT_PATH, vtt_filename)
+
+            # Generate VTT content using the same helper function
+            vtt_content = generate_vtt(segments)
+            with open(vtt_file_path, "w", encoding="utf-8") as f:
+                f.write(vtt_content)
+
+            add_status(f"VTT saved as {vtt_filename}")
+            return jsonify({
+                "vttPath": f"http://localhost:5000/vtt_files/{vtt_filename}",
+                "videoFile": f"http://localhost:5000/uploaded_videos/{video_filename}"
+            })
+        else:
+            add_status(f"Error: {response.status_code} - {response.text}")
+            return jsonify({"error": "API transcription failed."}), 500
+    except Exception as e:
+        add_status(f"Error during API transcription: {e}")
+        return jsonify({"error": "Exception occurred during API transcription."}), 500
+
+def convert_mp4_to_mp3(mp4_path):
+    """
+    Converts an MP4 file to an MP3 file using FFmpeg.
+    The output file will have the same base name with .mp3 extension.
+    """
+    mp3_path = os.path.splitext(mp4_path)[0] + ".mp3"
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-i", mp4_path,
+        "-vn",  # no video
+        "-acodec", "libmp3lame",
+        "-ab", "192k",
+        "-y",   # overwrite if exists
+        mp3_path
+    ]
+    add_status(f"Converting {mp4_path} to MP3...")
+    try:
+        subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+        add_status(f"Conversion complete. MP3 saved as {mp3_path}")
+    except subprocess.CalledProcessError as e:
+        add_status(f"Error during conversion: {e.output.decode('utf-8') if e.output else str(e)}")
+        raise
+    return mp3_path
+#
+# End of API transcription alternative
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)

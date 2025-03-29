@@ -10,6 +10,7 @@ const Layout: React.FC = () => {
   const [vttFile, setVttFile] = useState<string>("");
   const [statusMessages, setStatusMessages] = useState<string[]>([]);
   const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
+  const [isAPITranscribing, setIsAPITranscribing] = useState<boolean>(false); // New state for API transcription
 
   const addStatusMessage = (msg: string) => {
     setStatusMessages((prev) => [...prev, msg]);
@@ -62,7 +63,7 @@ const Layout: React.FC = () => {
 
   const handleTranscribe = async (filename: string) => {
     setIsTranscribing(true);
-    addStatusMessage(`Starting transcription for ${filename}...`);
+    addStatusMessage(`Starting local transcription for ${filename}...`);
     try {
       const response = await fetch("http://localhost:5000/transcribe_video", {
         method: "POST",
@@ -70,25 +71,57 @@ const Layout: React.FC = () => {
         body: JSON.stringify({ videoFilename: filename }),
       });
       if (!response.ok) {
-        throw new Error("Transcription request failed.");
+        throw new Error("Local transcription request failed.");
       }
       const data = await response.json();
       if (data.vttPath) {
-        addStatusMessage("Transcription complete.");
+        addStatusMessage("Local transcription complete.");
         if (filename === currentFilename) {
           setVttFile(data.vttPath);
         }
       } else {
-        addStatusMessage("Transcription failed: No VTT file returned.");
+        addStatusMessage("Local transcription failed: No VTT file returned.");
       }
     } catch (error) {
       if (error instanceof Error) {
-        addStatusMessage(`Transcription failed: ${error.message}`);
+        addStatusMessage(`Local transcription failed: ${error.message}`);
       } else {
-        addStatusMessage("Transcription failed: An unknown error occurred.");
+        addStatusMessage("Local transcription failed: An unknown error occurred.");
       }
     } finally {
       setIsTranscribing(false);
+    }
+  };
+
+  const handleAPITranscribe = async (filename: string) => {
+    setIsAPITranscribing(true);
+    addStatusMessage(`Starting API transcription for ${filename}...`);
+    try {
+      const response = await fetch("http://localhost:5000/transcribe_video_api", { // Assuming your API endpoint is /transcribe_video_api
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoFilename: filename }),
+      });
+      if (!response.ok) {
+        throw new Error("API transcription request failed.");
+      }
+      const data = await response.json();
+      if (data.vttPath) {
+        addStatusMessage("API transcription complete.");
+        if (filename === currentFilename) {
+          setVttFile(data.vttPath);
+        }
+      } else {
+        addStatusMessage("API transcription failed: No VTT file returned.");
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        addStatusMessage(`API transcription failed: ${error.message}`);
+      } else {
+        addStatusMessage("API transcription failed: An unknown error occurred.");
+      }
+    } finally {
+      setIsAPITranscribing(false);
     }
   };
 
@@ -133,7 +166,13 @@ const Layout: React.FC = () => {
 
         {/* Video & Transcription List */}
         <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
-          <VideoList onVideoSelect={handleVideoSelect} onTranscribe={handleTranscribe} isTranscribing={isTranscribing} />
+          <VideoList
+            onVideoSelect={handleVideoSelect}
+            onTranscribe={handleTranscribe}
+            onAPITranscribe={handleAPITranscribe} // Pass the new handler
+            isTranscribing={isTranscribing}
+            isAPITranscribing={isAPITranscribing} // Pass the new state
+          />
           <TranscriptionList />
         </div>
       </div>

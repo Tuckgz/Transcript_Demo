@@ -12,8 +12,10 @@ interface VideoActionsBubbleProps {
   video: VideoItem;
   onPlay: () => void;
   onTranscribe: () => void;
+  onAPITranscribe?: () => void; // New prop for API transcription
   onClose: () => void;
   isTranscribing: boolean;
+  isAPITranscribing?: boolean; // Optional prop to disable API transcribe button
 }
 
 const VideoActionsBubble: React.FC<VideoActionsBubbleProps> = ({
@@ -22,8 +24,10 @@ const VideoActionsBubble: React.FC<VideoActionsBubbleProps> = ({
   video,
   onPlay,
   onTranscribe,
+  onAPITranscribe,
   onClose,
   isTranscribing,
+  isAPITranscribing,
 }) => {
   const bubbleRef = useRef<HTMLDivElement>(null);
 
@@ -78,10 +82,27 @@ const VideoActionsBubble: React.FC<VideoActionsBubbleProps> = ({
           padding: "4px 8px",
           borderRadius: "4px",
           cursor: "pointer",
+          marginRight: "4px",
         }}
       >
-        {isTranscribing ? "Transcribing..." : "Transcribe"}
+        {isTranscribing ? "Transcribing..." : "Local Transcribe"}
       </button>
+      {onAPITranscribe && (
+        <button
+          onClick={onAPITranscribe}
+          disabled={isAPITranscribing}
+          style={{
+            background: "#6c757d",
+            color: "#fff",
+            border: "none",
+            padding: "4px 8px",
+            borderRadius: "4px",
+            cursor: "pointer",
+          }}
+        >
+          {isAPITranscribing ? "API Transcribing..." : "API Transcribe"}
+        </button>
+      )}
     </div>,
     document.body
   );
