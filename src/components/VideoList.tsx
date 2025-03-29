@@ -4,10 +4,18 @@ import VideoActionsBubble, { VideoItem } from "./VideoActionsBubble";
 interface VideoListProps {
   onVideoSelect: (videoUrl: string, filename: string) => void;
   onTranscribe: (filename: string) => void;
+  onAPITranscribe: (filename: string) => void; // New prop for API transcribe
   isTranscribing: boolean;
+  isAPITranscribing: boolean; // New prop for API transcribing state
 }
 
-const VideoList: React.FC<VideoListProps> = ({ onVideoSelect, onTranscribe, isTranscribing }) => {
+const VideoList: React.FC<VideoListProps> = ({
+  onVideoSelect,
+  onTranscribe,
+  onAPITranscribe,
+  isTranscribing,
+  isAPITranscribing,
+}) => {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -63,8 +71,17 @@ const VideoList: React.FC<VideoListProps> = ({ onVideoSelect, onTranscribe, isTr
 
   const handleTranscribeClick = () => {
     if (activeBubble) {
-      if (window.confirm(`Generate transcription for ${activeBubble.video.filename}?`)) {
+      if (window.confirm(`Generate local transcription for ${activeBubble.video.filename}?`)) {
         onTranscribe(activeBubble.video.filename);
+      }
+      setActiveBubble(null);
+    }
+  };
+
+  const handleAPITranscribeClick = () => {
+    if (activeBubble) {
+      if (window.confirm(`Generate API transcription for ${activeBubble.video.filename}?`)) {
+        onAPITranscribe(activeBubble.video.filename);
       }
       setActiveBubble(null);
     }
@@ -104,8 +121,10 @@ const VideoList: React.FC<VideoListProps> = ({ onVideoSelect, onTranscribe, isTr
           video={activeBubble.video}
           onPlay={handlePlayClick}
           onTranscribe={handleTranscribeClick}
+          onAPITranscribe={handleAPITranscribeClick} // Pass the new handler
           onClose={() => setActiveBubble(null)}
           isTranscribing={isTranscribing}
+          isAPITranscribing={isAPITranscribing} // Pass the new state
         />
       )}
     </div>
