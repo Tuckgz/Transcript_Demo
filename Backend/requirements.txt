@@ -1,0 +1,6 @@
+flask
+flask-cors
+yt-dlp
+ffmpeg-python
+requests
+numpy==1.23.5
