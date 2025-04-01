@@ -8,8 +8,8 @@ __pycache__/
 .venv/
 venv/
 
-backend/uploaded_videos/
-backend/vtt_files/
+uploaded_videos/
+vtt_files/
 
 node_modules/
 
