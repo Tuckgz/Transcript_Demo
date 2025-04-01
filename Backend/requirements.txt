@@ -4,3 +4,7 @@ yt-dlp
 ffmpeg-python
 requests
 numpy==1.23.5
+git+https://github.com/openai/whisper.git
+torch
+torchaudio
+torchvision
